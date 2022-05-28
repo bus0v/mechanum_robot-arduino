@@ -115,10 +115,10 @@ void loop(){
  
 // time
   long t1 = micros();
-  target[0] = 300*(sin(t1/1e6)>0);
-  target[1] = 300*(sin(t1/1e6)>0);
-  target[2] = 300*(sin(t1/1e6)>0);
-  target[3] = 300*(sin(t1/1e6)>0);
+  target[0] = 100*(sin(t1/1e6)>0);
+  target[1] = 100*(sin(t1/1e6)>0);
+  target[2] = 100*(sin(t1/1e6)>0);
+  target[3] = 100*(sin(t1/1e6)>0);
   
   float deltaT = ((float) (t1-t0))/(1.0e6);
   //80*(sin(t1/1e6))
