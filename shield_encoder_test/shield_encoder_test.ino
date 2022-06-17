@@ -1,10 +1,23 @@
 
-//FR,FL,BL,BR
+#include <Adafruit_MotorShield.h>
 
+
+// Create the motor shield object with the default I2C address
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+
+
+//FR,FL,BL,BR
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
 
+// Select which 'port' M1, M2, M3 or M4. In this case, M1
+Adafruit_DCMotor *FR = AFMS.getMotor(1);
+Adafruit_DCMotor *BL = AFMS.getMotor(2);
+Adafruit_DCMotor *BR = AFMS.getMotor(3);
+Adafruit_DCMotor *FL = AFMS.getMotor(4);
+
+Adafruit_DCMotor motors[]={*FR,*BL,*BR,*FL};
 
 volatile int newPosition [] = {0,0,0,0};
 
@@ -15,6 +28,14 @@ float eInt = 0;
 
 void setup(){
   Serial.begin(9600);
+  if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
+  // if (!AFMS.begin(1000)) {  // OR with a different frequency, say 1KHz
+    Serial.println("Could not find Motor Shield. Check wiring.");
+    while (1);
+  }
+  
+  Serial.println("Motor Shield found.");
+  
   for (int k = 0; k < 4; k++){
     pinMode(encA[k], INPUT);
     pinMode(encB[k], INPUT);
@@ -24,6 +45,8 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[1]),readEncoder<1>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
+
+    motors[k]->setSpeed(0);
 
 }}
 
