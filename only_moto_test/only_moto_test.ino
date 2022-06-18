@@ -22,19 +22,19 @@ volatile long t0 = 0;
 
 ;
 // instantiate the node handle
-ros::NodeHandle nh;
-
-void messageCb(const std_msgs::Float32MultiArray &speed_msg){
-  target[0] = speed_msg.data[0];
-  target[1] = speed_msg.data[1];
-  target[2] = speed_msg.data[2];
-  target[3] = speed_msg.data[3];
-}
+//ros::NodeHandle nh;
+//
+//void messageCb(const std_msgs::Float32MultiArray &speed_msg){
+//  target[0] = speed_msg.data[0];
+//  target[1] = speed_msg.data[1];
+//  target[2] = speed_msg.data[2];
+//  target[3] = speed_msg.data[3];
+//}
 //topic name = motor
-ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
-std_msgs::Int32MultiArray ticks_array;
+//ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
+//std_msgs::Int32MultiArray ticks_array;
 
-ros::Publisher pub("ticks", &ticks_array);
+//ros::Publisher pub("ticks", &ticks_array);
 
 void setup(){
   Serial.begin(57600);
@@ -51,10 +51,10 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
 
-    nh.initNode();
-    nh.subscribe(sub);
-    nh.advertise(pub);
-    while(!nh.connected()) {nh.spinOnce();}
+//    nh.initNode();
+//    nh.subscribe(sub);
+//    nh.advertise(pub);
+//    while(!nh.connected()) {nh.spinOnce();}
 }}
 
 void loop(){
@@ -65,9 +65,9 @@ void loop(){
      pos[k] = newPosition[k];
     }
   interrupts();
-  ticks_array.layout.data_offset = 0;
-  ticks_array.layout.dim[0].size = 4;
-  ticks_array.data = pos;
+//  ticks_array.layout.data_offset = 0;
+//  ticks_array.layout.dim[0].size = 4;
+//  ticks_array.data = pos;
 
   test();
 
@@ -78,8 +78,8 @@ void loop(){
 //      dir = -1;}
 //  setMotor(dir,target[k],pwm[k],in1[k],in2[k]);
 //  }
-  pub.publish( &ticks_array);
-  nh.spinOnce();
+//  pub.publish( &ticks_array);
+//  nh.spinOnce();
   delay(1);
 
 }
@@ -98,15 +98,15 @@ void test(){
   //go forward
   for (int k=0; k<4; k++){
     //evaluate the control signal
-    setMotor(1,100,pwm[k],in1[k],in2[k]);
+    setMotor(1,0,pwm[k],in1[k],in2[k]);
   }
-  delay(500);
+  delay(5000);
   //go backwards
   for (int k=0; k<4; k++){
     //evaluate the control signal
-    setMotor(-11,100,pwm[k],in1[k],in2[k]);
+    setMotor(-1,0,pwm[k],in1[k],in2[k]);
   }
-  delay(500);
+  delay(5000);
   
 }
 void setMotor(int dir,int pwmVal,int pwm, int IN1,int IN2){

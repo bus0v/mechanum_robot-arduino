@@ -73,10 +73,10 @@ SimplePID pid[4];
 ros::NodeHandle nh;
 
 void messageCb(const std_msgs::Float32MultiArray &speed_msg){
-//  target[0] = speed_msg.data[0];
-//  target[1] = speed_msg.data[1];
-//  target[2] = speed_msg.data[2];
-//  target[3] = speed_msg.data[3];
+  target[0] = speed_msg.data[0];
+  target[1] = speed_msg.data[1];
+  target[2] = speed_msg.data[2];
+  target[3] = speed_msg.data[3];
 }
 
 //topic name = motor
@@ -90,8 +90,10 @@ void setup(){
     pinMode(in1[k], OUTPUT);
     pinMode(in2[k], OUTPUT);
     //kp   kd   ki
-    pid[k].setParams(1, 0.5, 0.5, 255);
+    pid[k].setParams(1.5, 0.5, 0, 255);
     }
+    
+    //1.6 0.5 0
     //1, 0.5, 0.5 works for speed kind of
     //2.5 0.8 0.5 works with 5% accuracy for distance
     attachInterrupt(digitalPinToInterrupt(encA[0]),readEncoder<0>,RISING);
@@ -116,11 +118,6 @@ void loop(){
 // time
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
-  
-  target[0] = 100*(sin(t1/1e6)>0);
-  target[1] = 100*(sin(t1/1e6)>0);
-  target[2] = 100*(sin(t1/1e6)>0);
-  target[3] = 100*(sin(t1/1e6)>0);
   //80*(sin(t1/1e6))
   
 
@@ -147,6 +144,16 @@ for (int k=0; k<4; k++){
     pid[k].evalu(vFilt[k],target[k],deltaT,pwr,dir);
     setMotor(dir,pwr,pwm[k],in1[k],in2[k]);
   }
+  Serial.print(" vFilt    target    v_rpm ");
+  Serial.println();
+  for (int p = 0; p < 1; p++){
+    Serial.print(vFilt[p]);
+    Serial.print(" ");
+    Serial.print(target[p]);
+    Serial.print(" ");
+    Serial.print(v_rpm[p]);
+  }
+  Serial.println();
   nh.spinOnce();
 }
 
