@@ -11,7 +11,7 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
 
-// Select which 'port' M1, M2, M3 or M4. In this case, M1
+
 Adafruit_DCMotor *FR = AFMS.getMotor(1);
 Adafruit_DCMotor *BL = AFMS.getMotor(2);
 Adafruit_DCMotor *BR = AFMS.getMotor(3);
@@ -28,14 +28,15 @@ float eInt = 0;
 
 void setup(){
   Serial.begin(9600);
+  AFMS.begin();
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
   // if (!AFMS.begin(1000)) {  // OR with a different frequency, say 1KHz
     Serial.println("Could not find Motor Shield. Check wiring.");
     while (1);
   }
-  
+
   Serial.println("Motor Shield found.");
-  
+
   for (int k = 0; k < 4; k++){
     pinMode(encA[k], INPUT);
     pinMode(encB[k], INPUT);
@@ -46,7 +47,7 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
 
-    motors[k]->setSpeed(0);
+    motors[k].setSpeed(0);
 
 }}
 
@@ -62,10 +63,12 @@ void loop(){
   interrupts();
 
   // loop through the motors
+  for (int k = 0; k < 4; k++){
+    setMotor(1,0,k);
+  }
 
-
-  // make this into a loop
-  Serial.print("FR FL    BL    BR ");
+  //print output
+  Serial.print("FR   FL    BL    BR ");
   Serial.println();
   for (int p = 0; p < 4; p++){
     Serial.print(newPosition[p]);
@@ -83,5 +86,17 @@ void readEncoder(){
   else{
     newPosition[j]--;
   }
+}
 
+void setMotor(int dir,int pwmVal,int k){
+  motors[k].setSpeed(pwmVal);
+  if (dir == 1){
+    motors[k].run(FORWARD);
+  }
+  else if (dir == -1){
+    motors[k].run(BACKWARD);
+  }
+  else{
+    motors[k].run(RELEASE);
+  }
 }
