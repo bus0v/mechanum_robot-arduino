@@ -79,7 +79,15 @@ class SimplePID{
 
 //instantiate class
 SimplePID pid[4];
+<<<<<<< HEAD
 
+
+//instantiate the node handle
+ros::NodeHandle nh;
+=======
+long t0 = 0;
+float e0 = 0;
+float eInt = 0;
 
 //instantiate the node handle
 ros::NodeHandle nh;
@@ -90,9 +98,21 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  target[2] = speed_msg.data[2];
  target[3] = speed_msg.data[3];
 }
+>>>>>>> main
+
+void messageCb(const std_msgs::Float32MultiArray &speed_msg){
+ target[0] = speed_msg.data[0];
+ target[1] = speed_msg.data[1];
+ target[2] = speed_msg.data[2];
+ target[3] = speed_msg.data[3];
+}
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
 void setup(){
+<<<<<<< HEAD
   Serial.begin(57600);
+=======
+  Serial.begin(230400);
+>>>>>>> main
   AFMS.begin();
 
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
