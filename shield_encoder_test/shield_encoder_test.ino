@@ -92,9 +92,9 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  target[2] = speed_msg.data[2];
  target[3] = speed_msg.data[3];
 }
-
+ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
 void setup(){
-  Serial.begin(230400);
+  Serial.begin(57600);
   AFMS.begin();
 
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
@@ -157,14 +157,15 @@ void loop(){
     setMotor(dir,pwr,k);
   }
 
-  //print output
-  Serial.print("FR   FL    BL    BR ");
-  Serial.println();
-  for (int p = 0; p < 4; p++){
-    Serial.print(newPosition[p]);
-    Serial.print(" ");
-  }
-  Serial.println();
+  // //print output
+  // Serial.print("FR   FL    BL    BR ");
+  // Serial.println();
+  // for (int p = 0; p < 4; p++){
+  //   Serial.print(newPosition[p]);
+  //   Serial.print(" ");
+  // }
+  // Serial.println();
+  nh.spinOnce();
 }
 
 template <int j>
