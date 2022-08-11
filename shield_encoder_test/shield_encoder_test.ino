@@ -79,9 +79,7 @@ class SimplePID{
 
 //instantiate class
 SimplePID pid[4];
-long t0 = 0;
-float e0 = 0;
-float eInt = 0;
+
 
 //instantiate the node handle
 ros::NodeHandle nh;
