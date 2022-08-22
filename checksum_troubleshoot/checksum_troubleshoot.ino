@@ -46,7 +46,7 @@ double v_rpm[] = {0,0,0,0};
 
 double pwr[] = {0,0,0,0};
 int dir;
-double kp = 5,ki=1,kd=0.5;
+double kp = 2,ki=1,kd=0.5;
 
 PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
 PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
