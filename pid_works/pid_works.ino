@@ -1,4 +1,3 @@
-
 #include <Adafruit_MotorShield.h>
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
@@ -28,7 +27,7 @@ Adafruit_DCMotor *BL = AFMS.getMotor(2);
 Adafruit_DCMotor *BR = AFMS.getMotor(3);
 Adafruit_DCMotor *FL = AFMS.getMotor(4);
 
-Adafruit_DCMotor motors[] = {*FR,*BL,*BR,*FL};
+Adafruit_DCMotor motors[] = {*FR,*FL,*BL,*BR};
 
 
 //filter params
@@ -54,7 +53,7 @@ PID(&vFilt[2],&pwr[2],&target[2],kp,ki,kd,DIRECT),
 PID(&vFilt[3],&pwr[3],&target[3],kp,ki,kd,DIRECT)};
 
 //instantiate the node handle
-//ros::NodeHandle nh;
+ros::NodeHandle nh;
 
 
 void messageCb(const std_msgs::Float32MultiArray &speed_msg){
@@ -63,7 +62,8 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  target[2] = speed_msg.data[2];
  target[3] = speed_msg.data[3];
 }
-//ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
+
+ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 
 void setup(){
 
@@ -92,9 +92,9 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
     motors[k].setSpeed(0);
-//    nh.initNode();
-//    nh.subscribe(sub);
-//    while(!nh.connected()) {nh.spinOnce();}
+    nh.initNode();
+    nh.subscribe(sub);
+    while(!nh.connected()) {nh.spinOnce();}
 
 }}
 
@@ -112,12 +112,6 @@ void loop(){
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
 
-
-  target[0] = 30*(sin(t1/2e6));
-  target[1] = 30*(sin(t1/2e6));
-  target[2] = 30*(sin(t1/2e6));
-  target[3] = 30*(sin(t1/2e6));
-
   // loop through the motors
   for (int k = 0; k < 4; k++){
     //compute the speed
@@ -129,14 +123,12 @@ void loop(){
 
     //get speed in cm/s
     v_cm[k] = velocity[k]/330*25.1;
-   
+
     v_rpm[k] = velocity[k]/330*60.0;
-   
+
     vFilt[k] = f.filterIn(v_rpm[k]);
     vPrev[k] = vFilt[k];
-    
 
-    
     //evaluate the control signal
     pids[k].SetControllerDirection(DIRECT);
     int dir = 1;
@@ -145,30 +137,12 @@ void loop(){
       pids[k].SetControllerDirection(REVERSE);}
     pids[k].Compute();
 
-    //old pid[k].evalu(vFilt[k],target[k],deltaT,pwr,dir);
-     //loop through the motors
+    //loop through the motors
     setMotor(dir,pwr[k],k);
   }
-  //FR only
-  Serial.print("Target v_rpm V_filt");
-  Serial.println();
-  Serial.print(target[0]);
-  Serial.print(" ");
-  Serial.print(vFilt[0]);
-  Serial.println();
-//print output
-//   Serial.print("Target FR   FL    BL    BR ");
-//   Serial.println();
-//   Serial.print(target[0]);
-//   Serial.print(" ");
-//
-//   for (int p = 0; p < 4; p++){
-//    Serial.print(vFilt[p]);
-//    Serial.print(" ");
-//   }
-//   Serial.println();
-//  nh.spinOnce();
-//  delay(3);
+
+  nh.spinOnce();
+  delay(1000);
 }
 
 template <int j>
@@ -184,7 +158,7 @@ void readEncoder(){
 
 void setMotor(int dir,double pwm,int k){
   int pwmVal;
-  pwmVal=pwm;
+  pwmVal = pwm;
   motors[k].setSpeed(pwmVal);
   if (dir == 1){
     motors[k].run(FORWARD);
