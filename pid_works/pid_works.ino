@@ -3,7 +3,7 @@
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
 #include <PID_v1.h>
-
+#include <std_msgs/Int16MultiArray.h>
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -32,7 +32,7 @@ Adafruit_DCMotor motors[] = {*FR,*FL,*BL,*BR};
 
 
 //filter params
-const float cutoff_freq   = 15000.0;  //Cutoff frequency in Hz
+const float cutoff_freq   = 20000.0;  //Cutoff frequency in Hz
 const float sampling_time = 0.0000001; //Sampling time in seconds.
 IIR::ORDER  order  = IIR::ORDER::OD1; // Order (OD1 to OD4)
 
@@ -46,8 +46,9 @@ double v_rpm[] = {0,0,0,0};
 
 double pwr[] = {0,0,0,0};
 int dir;
-double kp = 5,ki=1,kd=0.5;
-
+double kp = 20,ki=5,kd=0.5;
+//can also do 5 1 0,5??
+//FR is weird
 PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
 PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
 PID(&vFilt[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
@@ -67,7 +68,9 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  targetpid[2] = target[2];
  targetpid[3] = target[3];}
 
+std_msgs::Int16MultiArray wheel_ticks;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
+ros::Publisher pub("ticks", &wheel_ticks);
 
 void setup(){
 
@@ -84,7 +87,7 @@ void setup(){
 
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
-    pids[k].SetOutputLimits(-255,255);
+    pids[k].SetOutputLimits(0,255);
     pids[k].SetSampleTime(10);
     pinMode(encA[k], INPUT);
     pinMode(encB[k], INPUT);
@@ -97,8 +100,10 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
     motors[k].setSpeed(0);
     nh.initNode();
-    nh.subscribe(sub);
+    
     while(!nh.connected()) {nh.spinOnce();}
+    nh.subscribe(sub);
+    nh.advertise(pub);
 
 }}
 
@@ -109,6 +114,7 @@ void loop(){
   noInterrupts();
   for(int k = 0; k < 4; k++){
      pos[k] = newPosition[k];
+     wheel_ticks.data[k] = newPosition[k];
     }
   interrupts();
 
@@ -146,7 +152,8 @@ void loop(){
   }
 
   nh.spinOnce();
-  delay(1000);
+  pub.publish(&wheel_ticks);
+  
 }
 
 template <int j>

@@ -1,10 +1,9 @@
-
 #include <Adafruit_MotorShield.h>
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
 #include <PID_v1.h>
-
+#include <std_msgs/Int16MultiArray.h>
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -14,7 +13,8 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
-double target[4] = {0,0,0,0};
+int target[4] = {0,0,0,0};
+double targetpid[4] = {0,0,0,0};
 volatile int newPosition [] = {0,0,0,0};
 volatile float velocity[] = {0,0,0,0};
 volatile float distance[] = {0,0,0,0};
@@ -46,16 +46,16 @@ double v_rpm[] = {0,0,0,0};
 
 double pwr[] = {0,0,0,0};
 int dir;
-double kp = 20,ki = 5,kd = 0.5;
-//18 5 0.5 works but not for fr
-//5 1 0.5
-PID pids[4]= {PID(&vFilt[0],&pwr[0],&target[0],kp,ki,1,DIRECT),
-PID(&vFilt[1],&pwr[1],&target[1],kp,ki,kd,DIRECT),
-PID(&vFilt[2],&pwr[2],&target[2],kp,ki,kd,DIRECT),
-PID(&vFilt[3],&pwr[3],&target[3],kp,ki,kd,DIRECT)};
+double kp = 20,ki=5,kd=0.5;
+//can also do 5 1 0,5??
+//FR is weird
+PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
+PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
+PID(&vFilt[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
+PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
 
 //instantiate the node handle
-//ros::NodeHandle nh;
+ros::NodeHandle nh;
 
 
 void messageCb(const std_msgs::Float32MultiArray &speed_msg){
@@ -63,8 +63,14 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  target[1] = speed_msg.data[1];
  target[2] = speed_msg.data[2];
  target[3] = speed_msg.data[3];
-}
-//ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb );
+ targetpid[0] = target[0];
+ targetpid[1] = target[1];
+ targetpid[2] = target[2];
+ targetpid[3] = target[3];}
+
+std_msgs::Int16MultiArray wheel_ticks;
+ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
+ros::Publisher pub("ticks", &wheel_ticks);
 
 void setup(){
 
@@ -93,9 +99,18 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
     motors[k].setSpeed(0);
-//    nh.initNode();
-//    nh.subscribe(sub);
-//    while(!nh.connected()) {nh.spinOnce();}
+
+    
+    
+    nh.initNode();
+    wheel_ticks.layout.dim_length = 0;
+    wheel_ticks.data_length = 4;
+    wheel_ticks.layout.data_offset = 0;
+    
+    nh.subscribe(sub);
+    nh.advertise(pub);
+    while(!nh.connected()) {nh.spinOnce();}
+    
 
 }}
 
@@ -107,17 +122,12 @@ void loop(){
   for(int k = 0; k < 4; k++){
      pos[k] = newPosition[k];
     }
+    wheel_ticks.data = newPosition;
   interrupts();
 
   // time
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
-
-
-  target[0] = -100*(sin(t1/2e6)<0);
-  target[1] = -100*(sin(t1/2e6)<0);
-  target[2] = -100*(sin(t1/2e6)<0);
-  target[3] = -100*(sin(t1/2e6)<0);
 
   // loop through the motors
   for (int k = 0; k < 4; k++){
@@ -130,10 +140,12 @@ void loop(){
 
     //get speed in cm/s
     v_cm[k] = velocity[k]/330*25.1;
+
     v_rpm[k] = velocity[k]/330*60.0;
+
     vFilt[k] = f.filterIn(v_rpm[k]);
     vPrev[k] = vFilt[k];
-    
+
     //evaluate the control signal
     pids[k].SetControllerDirection(DIRECT);
     int dir = 1;
@@ -142,32 +154,13 @@ void loop(){
       pids[k].SetControllerDirection(REVERSE);}
     pids[k].Compute();
 
-    //old pid[k].evalu(vFilt[k],target[k],deltaT,pwr,dir);
-     //loop through the motors
+    //loop through the motors
     setMotor(dir,pwr[k],k);
   }
-  //FR only
-  Serial.print("Target v_rpm V_filt");
-  Serial.println();
-  Serial.print(target[0]);
-  Serial.print(" ");
-  Serial.print(v_rpm[0]);
-  Serial.print(" ");
-  Serial.print(vFilt[0]);
-  Serial.println();
-//print output
-//   Serial.print("Target FR   FL    BL    BR ");
-//   Serial.println();
-//   Serial.print(target[0]);
-//   Serial.print(" ");
-//
-//   for (int p = 0; p < 4; p++){
-//    Serial.print(vFilt[p]);
-//    Serial.print(" ");
-//   }
-//   Serial.println();
-//  nh.spinOnce();
-//  delay(3);
+  pub.publish(&wheel_ticks);
+  nh.spinOnce();
+  
+  
 }
 
 template <int j>
@@ -179,11 +172,12 @@ void readEncoder(){
   else{
     newPosition[j]--;
   }
+  
 }
 
 void setMotor(int dir,double pwm,int k){
   int pwmVal;
-  pwmVal=pwm;
+  pwmVal = pwm;
   motors[k].setSpeed(pwmVal);
   if (dir == 1){
     motors[k].run(FORWARD);

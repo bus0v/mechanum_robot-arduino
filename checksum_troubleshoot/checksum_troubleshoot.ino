@@ -84,7 +84,7 @@ void setup(){
 
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
-    pids[k].SetOutputLimits(-255,255);
+    pids[k].SetOutputLimits(0,255);
     pids[k].SetSampleTime(10);
     pinMode(encA[k], INPUT);
     pinMode(encB[k], INPUT);
