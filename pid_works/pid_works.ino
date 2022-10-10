@@ -3,7 +3,7 @@
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
 #include <PID_v1.h>
-#include <std_msgs/Int16MultiArray.h>
+#include <std_msgs/Int64MultiArray.h>
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -68,7 +68,7 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  targetpid[2] = target[2];
  targetpid[3] = target[3];}
 
-std_msgs::Int16MultiArray wheel_ticks;
+std_msgs::Int64MultiArray wheel_ticks;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub("ticks", &wheel_ticks);
 
@@ -100,7 +100,7 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
     motors[k].setSpeed(0);
     nh.initNode();
-    
+
     while(!nh.connected()) {nh.spinOnce();}
     nh.subscribe(sub);
     nh.advertise(pub);
@@ -153,7 +153,7 @@ void loop(){
 
   nh.spinOnce();
   pub.publish(&wheel_ticks);
-  
+
 }
 
 template <int j>
