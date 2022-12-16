@@ -1,11 +1,14 @@
-
+#include <Adafruit_MotorShield.h>
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
 #include <PID_v1.h>
 #include <std_msgs/Int64MultiArray.h>
-#include "motors.h"
-#include "ultrasound_sensors.h"
+
+// Create the motor shield object with the default I2C address
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+
+
 //FR,FL,BL,BR
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
@@ -18,6 +21,12 @@ volatile int posPrev[] = {0,0,0,0};
 long t0 = 0;
 float e0 = 0;
 float eInt = 0;
+
+Adafruit_DCMotor *FR = AFMS.getMotor(1);
+Adafruit_DCMotor *BL = AFMS.getMotor(2);
+Adafruit_DCMotor *BR = AFMS.getMotor(3);
+Adafruit_DCMotor *FL = AFMS.getMotor(4);
+Adafruit_DCMotor motors[] = {*FR,*FL,*BL,*BR};
 
 
 //filter params
@@ -56,15 +65,22 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
 
 std_msgs::Int64MultiArray wheel_ticks;
 std_msgs::Int64MultiArray vel_trans;
-std_msgs::Float32MultiArray sonar_dist;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
-ros::Publisher pub_range("sonar_readings", &sonar_dist);
 ros::Publisher pub_vel("v_filtered", &vel_trans);
-
 void setup(){
+
   Serial.begin(57600);
-  startAFMS();
+
+  AFMS.begin();
+
+  if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
+  // if (!AFMS.begin(1000)) {  // OR with a different frequency, say 1KHz
+    Serial.println("Could not find Motor Shield. Check wiring.");
+    while (1);
+  }
+  //Serial.println("Motor Shield found.");
+
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
     pids[k].SetOutputLimits(0,255);
@@ -78,14 +94,13 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(encA[1]),readEncoder<1>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
-    set_vel(0);
+    motors[k].setSpeed(0);
     nh.initNode();
 
     while(!nh.connected()) {nh.spinOnce();}
     nh.subscribe(sub);
     nh.advertise(pub_ticks);
     nh.advertise(pub_vel);
-    nh.advertise(pub_range);
 
 }}
 
@@ -132,11 +147,10 @@ void loop(){
     //loop through the motors
     setMotor(dir,pwr[k],k);
   }
-  sonar_dist.data = *read_distances();
+
   nh.spinOnce();
   pub_ticks.publish(&wheel_ticks);
   pub_vel.publish(&vel_trans);
-  pub_range.publish(&sonar_dist);
 
 }
 
@@ -148,5 +162,20 @@ void readEncoder(){
   }
   else{
     newPosition[j]--;
+  }
+}
+
+void setMotor(int dir,double pwm,int k){
+  int pwmVal;
+  pwmVal = pwm;
+  motors[k].setSpeed(pwmVal);
+  if (dir == 1){
+    motors[k].run(FORWARD);
+  }
+  else if (dir == -1){
+    motors[k].run(BACKWARD);
+  }
+  else{
+    motors[k].run(RELEASE);
   }
 }
