@@ -55,12 +55,12 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  }
 
 std_msgs::Int64MultiArray wheel_ticks;
-std_msgs::Int64MultiArray vel_trans;
-std_msgs::Float32MultiArray sonar_dist;
+//std_msgs::Float32MultiArray vel_trans;
+//std_msgs::Float32MultiArray sonar_dist;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
-ros::Publisher pub_range("sonar_readings", &sonar_dist);
-ros::Publisher pub_vel("v_filtered", &vel_trans);
+//ros::Publisher pub_range("sonar_readings", &sonar_dist);
+//ros::Publisher pub_vel("v_filtered", &vel_trans);
 
 void setup(){
   Serial.begin(57600);
@@ -84,8 +84,8 @@ void setup(){
     while(!nh.connected()) {nh.spinOnce();}
     nh.subscribe(sub);
     nh.advertise(pub_ticks);
-    nh.advertise(pub_vel);
-    nh.advertise(pub_range);
+    //nh.advertise(pub_vel);
+    //nh.advertise(pub_range);
 
 }}
 
@@ -120,7 +120,7 @@ void loop(){
 
     vFilt[k] = f.filterIn(v_rpm[k]);
     vPrev[k] = vFilt[k];
-    vel_trans.data[k] = vFilt[k];
+    //vel_trans.data[k] = vFilt[k];
     //evaluate the control signal
     pids[k].SetControllerDirection(DIRECT);
     int dir = 1;
@@ -132,11 +132,13 @@ void loop(){
     //loop through the motors
     setMotor(dir,pwr[k],k);
   }
-  sonar_dist.data = *read_distances();
+  //sonar_dist.data = *read_distances();
   nh.spinOnce();
   pub_ticks.publish(&wheel_ticks);
-  pub_vel.publish(&vel_trans);
-  pub_range.publish(&sonar_dist);
+  //pub_vel.publish(&vel_trans);
+  //pub_range.publish(&sonar_dist);
+  
+  delay(10);
 
 }
 

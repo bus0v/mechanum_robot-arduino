@@ -19,5 +19,5 @@ int *read_distances() {
     distances[i] = sonar[i].ping_cm();
     return distances;
   }
-  Serial.println();
+  
 }

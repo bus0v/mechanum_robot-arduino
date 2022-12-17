@@ -12,10 +12,9 @@ void startAFMS(){
   AFMS.begin();
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
   // if (!AFMS.begin(1000)) {  // OR with a different frequency, say 1KHz
-    Serial.println("Could not find Motor Shield. Check wiring.");
     while (1);
   }
-  Serial.println("Motor Shield found.");
+  
 }
 
 void setMotor(int dir,double pwm,int k){
