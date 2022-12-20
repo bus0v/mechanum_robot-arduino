@@ -3,13 +3,15 @@
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
 #include <PID_v1.h>
-#include <std_msgs/Int64MultiArray.h>
+#include <std_msgs/Int16MultiArray.h>
 #include "motors.h"
 #include "ultrasound_sensors.h"
 //FR,FL,BL,BR
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
+const int encoderMin = -32768;
+const int encoderMax = -32768;
 double targetpid[4] = {0,0,0,0};
 volatile int newPosition [] = {0,0,0,0};
 volatile float velocity[] = {0,0,0,0};
@@ -54,7 +56,7 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  targetpid[3] = speed_msg.data[3];
  }
 
-std_msgs::Int64MultiArray wheel_ticks;
+std_msgs::Int16MultiArray wheel_ticks;
 //std_msgs::Float32MultiArray vel_trans;
 //std_msgs::Float32MultiArray sonar_dist;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
@@ -138,7 +140,7 @@ void loop(){
   //pub_vel.publish(&vel_trans);
   //pub_range.publish(&sonar_dist);
   
-  delay(10);
+  
 
 }
 
@@ -146,9 +148,19 @@ template <int j>
 void readEncoder(){
   int b = digitalRead(encB[j]);
   if(b > 0){
-    newPosition[j]++;
+    if (newPosition[j] == encoderMax){
+      newPosition[j] = encoderMin;
+    }
+    else{
+     newPosition[j]++; 
+    }
   }
   else{
-    newPosition[j]--;
+    if (newPosition[j] == encoderMin){
+      newPosition[j] = encoderMax;
+    }
+    else{
+      newPosition[j]--;
+    }
   }
 }
