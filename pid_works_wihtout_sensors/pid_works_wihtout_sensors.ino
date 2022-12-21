@@ -5,7 +5,7 @@
 #include <PID_v1.h>
 #include <std_msgs/Int16MultiArray.h>
 #include "motors.h"
-#include "ultrasound_sensors.h"
+
 //FR,FL,BL,BR
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
@@ -140,6 +140,7 @@ void loop(){
   pub_ticks.publish(&wheel_ticks);
   //pub_vel.publish(&vel_trans);
   //pub_range.publish(&sonar_dist);
+  
   delay(1);
   
 
