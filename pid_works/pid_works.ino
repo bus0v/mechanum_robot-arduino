@@ -1,4 +1,3 @@
-
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
 #include <filters.h>
@@ -6,12 +5,13 @@
 #include <std_msgs/Int16MultiArray.h>
 #include "motors.h"
 #include "ultrasound_sensors.h"
+
 //FR,FL,BL,BR
 // define pin lists
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
 const int encoderMin = -32768;
-const int encoderMax = -32768;
+const int encoderMax = 32768;
 double targetpid[4] = {0,0,0,0};
 volatile int newPosition [] = {0,0,0,0};
 volatile float velocity[] = {0,0,0,0};
@@ -20,7 +20,6 @@ volatile int posPrev[] = {0,0,0,0};
 long t0 = 0;
 float e0 = 0;
 float eInt = 0;
-
 
 //filter params
 const float cutoff_freq   = 20000.0;  //Cutoff frequency in Hz
@@ -37,7 +36,7 @@ double v_rpm[] = {0,0,0,0};
 double pwr[] = {0,0,0,0};
 int dir;
 
-double kp = 20,ki=5,kd=0.5;
+double kp = 20, ki = 5, kd = 0.5;
 //can also do 5 1 0,5??
 //FR is weird
 PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
@@ -48,12 +47,13 @@ PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
 //instantiate the node handle
 ros::NodeHandle nh;
 
-
 void messageCb(const std_msgs::Float32MultiArray &speed_msg){
+ noInterrupts();
  targetpid[0] = speed_msg.data[0];
  targetpid[1] = speed_msg.data[1];
  targetpid[2] = speed_msg.data[2];
  targetpid[3] = speed_msg.data[3];
+ interrupts();
  }
 
 std_msgs::Int16MultiArray wheel_ticks;
@@ -65,8 +65,15 @@ ros::Publisher pub_ticks("ticks", &wheel_ticks);
 //ros::Publisher pub_vel("v_filtered", &vel_trans);
 
 void setup(){
-  Serial.begin(57600);
   startAFMS();
+  nh.getHardware()->setBaud(115200);
+  nh.initNode();
+  while(!nh.connected()) {nh.spinOnce();}
+  nh.subscribe(sub);
+  nh.advertise(pub_ticks);
+  nh.negotiateTopics();
+  //nh.advertise(pub_vel);
+  //nh.advertise(pub_range); 
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
     pids[k].SetOutputLimits(0,255);
@@ -76,21 +83,11 @@ void setup(){
     //kp kd ki pwr
 
     //2.5 0.8 0.5 works with 5% accuracy for distance
+    set_vel(0);}
     attachInterrupt(digitalPinToInterrupt(encA[0]),readEncoder<0>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[1]),readEncoder<1>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
-    attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
-    set_vel(0);
-    nh.initNode();
-
-    while(!nh.connected()) {nh.spinOnce();}
-    nh.subscribe(sub);
-    nh.advertise(pub_ticks);
-    nh.negotiateTopics();
-    //nh.advertise(pub_vel);
-    //nh.advertise(pub_range);
-
-}}
+    attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);}
 
 
 void loop(){
@@ -136,13 +133,14 @@ void loop(){
     setMotor(dir,pwr[k],k);
   }
   //sonar_dist.data = *read_distances();
+  noInterrupts();
   nh.spinOnce();
   pub_ticks.publish(&wheel_ticks);
+  interrupts();
+  delay(3);
   //pub_vel.publish(&vel_trans);
   //pub_range.publish(&sonar_dist);
-  delay(1);
   
-
 }
 
 template <int j>
