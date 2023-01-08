@@ -11,7 +11,7 @@
 const int encA[] = {3, 19, 18, 2};
 const int encB[] = {26, 15, 10, 5};
 const int encoderMin = -32768;
-const int encoderMax = 32768;
+const int encoderMax = 32767;
 double targetpid[4] = {0,0,0,0};
 volatile int newPosition [] = {0,0,0,0};
 volatile float velocity[] = {0,0,0,0};
@@ -95,11 +95,11 @@ void loop(){
   int pos[4];
   noInterrupts();
   for(int k = 0; k < 4; k++){
-     pos[k] = newPosition[k];
-     wheel_ticks.data[k] = newPosition[k];
-    }
+     pos[k] = newPosition[k];}
+     
+  wheel_ticks.data = newPosition; 
   interrupts();
-
+  wheel_ticks.data_length = 4;
   // time
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
