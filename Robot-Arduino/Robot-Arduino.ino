@@ -20,7 +20,7 @@ volatile int posPrev[] = {0,0,0,0};
 long t0 = 0;
 float e0 = 0;
 float eInt = 0;
-
+float vFilt_float[4];
 //filter params
 const float cutoff_freq   = 20000.0;  //Cutoff frequency in Hz
 const float sampling_time = 0.0000001; //Sampling time in seconds.
@@ -57,12 +57,12 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  }
 
 std_msgs::Int16MultiArray wheel_ticks;
-//std_msgs::Float32MultiArray vel_trans;
+std_msgs::Float32MultiArray vel_trans;
 //std_msgs::Float32MultiArray sonar_dist;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
 //ros::Publisher pub_range("sonar_readings", &sonar_dist);
-//ros::Publisher pub_vel("v_filtered", &vel_trans);
+ros::Publisher pub_vel("v_filtered", &vel_trans);
 
 void setup(){
   startAFMS();
@@ -71,8 +71,8 @@ void setup(){
   while(!nh.connected()) {nh.spinOnce();}
   nh.subscribe(sub);
   nh.advertise(pub_ticks);
+  nh.advertise(pub_vel);
   nh.negotiateTopics();
-  //nh.advertise(pub_vel);
   //nh.advertise(pub_range); 
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
@@ -120,7 +120,7 @@ void loop(){
 
     vFilt[k] = f.filterIn(v_rpm[k]);
     vPrev[k] = vFilt[k];
-    //vel_trans.data[k] = vFilt[k];
+    
     //evaluate the control signal
     pids[k].SetControllerDirection(DIRECT);
     int dir = 1;
@@ -131,14 +131,20 @@ void loop(){
 
     //loop through the motors
     setMotor(dir,pwr[k],k);
+    vFilt_float[k] = vFilt[k];
   }
+  
+  //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
+  vel_trans.data = vFilt_float;
+  vel_trans.data_length = 4;
   //sonar_dist.data = *read_distances();
   noInterrupts();
   nh.spinOnce();
   pub_ticks.publish(&wheel_ticks);
+  pub_vel.publish(&vel_trans);
   interrupts();
   delay(3);
-  //pub_vel.publish(&vel_trans);
+  
   //pub_range.publish(&sonar_dist);
   
 }
