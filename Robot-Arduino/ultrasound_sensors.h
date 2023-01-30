@@ -1,1 +1,1 @@
-int *read_distances();
+unsigned int read_distances();

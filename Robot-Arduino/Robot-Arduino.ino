@@ -3,6 +3,7 @@
 #include <filters.h>
 #include <PID_v1.h>
 #include <std_msgs/Int16MultiArray.h>
+#include <sensor_msgs/Range.h>
 #include "motors.h"
 #include "ultrasound_sensors.h"
 
@@ -58,10 +59,10 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
 
 std_msgs::Int16MultiArray wheel_ticks;
 std_msgs::Float32MultiArray vel_trans;
-//std_msgs::Float32MultiArray sonar_dist;
+sensor_msgs::Range sonar_dist;
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
-//ros::Publisher pub_range("sonar_readings", &sonar_dist);
+ros::Publisher pub_range("sonar_readings", &sonar_dist);
 ros::Publisher pub_vel("v_filtered", &vel_trans);
 
 void setup(){
@@ -72,8 +73,15 @@ void setup(){
   nh.subscribe(sub);
   nh.advertise(pub_ticks);
   nh.advertise(pub_vel);
+  nh.advertise(pub_range);
   nh.negotiateTopics();
-  //nh.advertise(pub_range); 
+  //range stuff
+  sonar_dist.radiation_type = sensor_msgs::Range::ULTRASOUND;
+  sonar_dist.min_range = 0.02;
+  sonar_dist.max_range = 4.0;
+  char frame_id[] = "/ultrasound_ranger";
+  sonar_dist.header.frame_id = frame_id;
+  sonar_dist.field_of_view = 0.523599;
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
     pids[k].SetOutputLimits(0,255);
@@ -137,16 +145,16 @@ void loop(){
   //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
   vel_trans.data = vFilt_float;
   vel_trans.data_length = 4;
-  //sonar_dist.data = *read_distances();
+  
+  sonar_dist.range = read_distances()/100.0;
+  sonar_dist.header.stamp = nh.now();
   noInterrupts();
-  nh.spinOnce();
   pub_ticks.publish(&wheel_ticks);
   pub_vel.publish(&vel_trans);
+  pub_range.publish(&sonar_dist);
+  nh.spinOnce();
   interrupts();
-  delay(3);
-  
-  //pub_range.publish(&sonar_dist);
-  
+  delay(3); 
 }
 
 template <int j>
