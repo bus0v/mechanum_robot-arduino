@@ -1,5 +1,7 @@
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/Float64MultiArray.h>
+#include <geometry_msgs/Twist.h>
 #include <filters.h>
 #include <PID_v1.h>
 #include <std_msgs/Int16MultiArray.h>
@@ -48,7 +50,7 @@ PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
 //instantiate the node handle
 ros::NodeHandle nh;
 
-void messageCb(const std_msgs::Float32MultiArray &speed_msg){
+void messageCb(const std_msgs::Twist &speed_msg){
  noInterrupts();
  targetpid[0] = speed_msg.data[0];
  targetpid[1] = speed_msg.data[1];
@@ -111,6 +113,15 @@ void loop(){
   // time
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
+  // inverse kinematics
+ //python code fix this
+  transform = np.array([ (-1, 1, (d1+d2)),
+                            (1, 1, -(d1+d2)),
+                            (-1, 1, -(d1+d2)),
+                            (1, 1, (d1+d2)) ])
+
+
+    wheels = transform.dot(qvel)
 
   // loop through the motors
   for (int k = 0; k < 4; k++){
