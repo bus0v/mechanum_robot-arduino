@@ -6,8 +6,19 @@
 #include <PID_v1.h>
 #include <std_msgs/Int16MultiArray.h>
 #include <sensor_msgs/Range.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/Temperature.h>
 #include "motors.h"
 #include "ultrasound_sensors.h"
+#include "FastIMU.h"
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/Temperature.h>
+#define IMU_ADDRESS 0x68
+MPU6050 IMU;
+
+calData calib = { 0 };  //Calibration data
+AccelData accelData;    //Sensor data
+GyroData gyroData;
 
 //FR,FL,BL,BR
 // define pin lists
@@ -39,13 +50,14 @@ double v_rpm[] = {0,0,0,0};
 double pwr[] = {0,0,0,0};
 int dir;
 
-double kp = 20, ki = 5, kd = 0.5;
+double kp = 5, ki = 5, kd = 0.1;
+//20 5 0.5
 //can also do 5 1 0,5??
 //FR is weird
-PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
-PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
-PID(&vFilt[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
-PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
+PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],5,2.5,0.5,DIRECT),
+PID(&vFilt[1],&pwr[1],&targetpid[1],5,4,0.75,DIRECT),
+PID(&vFilt[2],&pwr[2],&targetpid[2],5,4,0.75,DIRECT),
+PID(&vFilt[3],&pwr[3],&targetpid[3],5,2.5,0.5,DIRECT)};
 
 //instantiate the node handle
 ros::NodeHandle nh;
@@ -59,13 +71,23 @@ void messageCb(const std_msgs::Twist &speed_msg){
  interrupts();
  }
 
+//set message types
 std_msgs::Int16MultiArray wheel_ticks;
 std_msgs::Float32MultiArray vel_trans;
 sensor_msgs::Range sonar_dist;
+sensor_msgs::Imu imu_msg;
+sensor_msgs::Temperature temp_msg;
+
+//initialize subscribers and publishers
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
-ros::Publisher pub_range("sonar_readings", &sonar_dist);
+ros::Publisher pub_range_back("sonar_back", &sonar_dist);
+ros::Publisher pub_range_front("sonar_front", &sonar_dist);
+ros::Publisher pub_range_left("sonar_left", &sonar_dist);
+ros::Publisher pub_range_right("sonar_right", &sonar_dist);
 ros::Publisher pub_vel("v_filtered", &vel_trans);
+ros::Publisher imu_data("/imu_data", &imu_msg);
+ros::Publisher temp_data("/temp", &temp_msg);
 
 void setup(){
   startAFMS();
@@ -75,8 +97,14 @@ void setup(){
   nh.subscribe(sub);
   nh.advertise(pub_ticks);
   nh.advertise(pub_vel);
-  nh.advertise(pub_range);
+  nh.advertise(pub_range_back);
+  nh.advertise(pub_range_front);
+  nh.advertise(pub_range_left);
+  nh.advertise(pub_range_right);
+  nh.advertise(imu_data);
+  nh.advertise(temp_data);
   nh.negotiateTopics();
+  
   //range stuff
   sonar_dist.radiation_type = sensor_msgs::Range::ULTRASOUND;
   sonar_dist.min_range = 0.02;
@@ -84,6 +112,20 @@ void setup(){
   char frame_id[] = "/ultrasound_ranger";
   sonar_dist.header.frame_id = frame_id;
   sonar_dist.field_of_view = 0.523599;
+  
+  //imu calibration
+  calib.accelBias[0] = -0.05;
+  calib.accelBias[1] = -0.03;
+  calib.accelBias[2] = 0.16;
+  calib.gyroBias[0]= -8.24;
+  calib.gyroBias[1]= 3.26;
+  calib.gyroBias[2] = -3.68;
+  calib.valid = 1;
+  int err = IMU.init(calib, IMU_ADDRESS);
+  err = IMU.setGyroRange(500);      //USE THESE TO SET THE RANGE, IF AN INVALID RANGE IS SET IT WILL RETURN -1
+  err = IMU.setAccelRange(2);
+  char frame_imu[] = "/imu_frame";
+  imu_msg.header.frame_id = frame_imu;
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
     pids[k].SetOutputLimits(0,255);
@@ -157,14 +199,43 @@ void loop(){
   vel_trans.data = vFilt_float;
   vel_trans.data_length = 4;
   
-  sonar_dist.range = read_distances()/100.0;
+  sonar_dist.range = read_distances(0)/ 100.0;
   sonar_dist.header.stamp = nh.now();
-  noInterrupts();
+  pub_range_back.publish(&sonar_dist);
+  
+  sonar_dist.range = read_distances(1)/ 100.0;
+  sonar_dist.header.stamp = nh.now();
+  pub_range_right.publish(&sonar_dist);
+  
+  sonar_dist.range = read_distances(2)/ 100.0;
+  sonar_dist.header.stamp = nh.now();
+  pub_range_left.publish(&sonar_dist);
+  
+  sonar_dist.range = read_distances(3)/ 100.0;
+  sonar_dist.header.stamp = nh.now();
+  pub_range_front.publish(&sonar_dist);
+
+  //get data from IMU
+  IMU.update();
+  IMU.getAccel(&accelData);
+  imu_msg.header.stamp = nh.now();
+  //convert to m/s^2
+  imu_msg.linear_acceleration.x = accelData.accelY * 9.81;
+  imu_msg.linear_acceleration.y = accelData.accelX * 9.81;
+  imu_msg.linear_acceleration.z = accelData.accelZ * 9.81;
+  IMU.getGyro(&gyroData);
+  //convert to rad/s from degrees
+  imu_msg.angular_velocity.x = gyroData.gyroY * 0.0174533;
+  imu_msg.angular_velocity.y = gyroData.gyroX * 0.0174533;
+  imu_msg.angular_velocity.z = gyroData.gyroZ * 0.0174533;
+  temp_msg.temperature = IMU.getTemp();
+  imu_data.publish(&imu_msg);
+  temp_msg.header.stamp = nh.now();
+  temp_data.publish(&temp_msg);
   pub_ticks.publish(&wheel_ticks);
   pub_vel.publish(&vel_trans);
-  pub_range.publish(&sonar_dist);
   nh.spinOnce();
-  interrupts();
+  
   delay(3); 
 }
 

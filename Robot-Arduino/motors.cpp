@@ -19,7 +19,11 @@ void startAFMS(){
 
 void setMotor(int dir,double pwm,int k){
   int pwmVal;
+  float trim_left = 1;
   pwmVal = pwm;
+  if ((k==1) || (k==2)){
+    pwmVal = pwmVal * trim_left;
+  }
   motors[k].setSpeed(pwmVal);
   if (dir == 1){
     motors[k].run(FORWARD);

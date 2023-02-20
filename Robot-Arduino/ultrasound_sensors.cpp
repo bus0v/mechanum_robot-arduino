@@ -12,13 +12,14 @@ NewPing sonar[SONAR_NUM] = {   // Sensor object array.
   NewPing(14, 32, MAX_DISTANCE) //front about 42cm on table
 };
 
-unsigned int read_distances() {
-  unsigned int distances[4];
-  for (uint8_t i = 0; i < 1; i++) { // Loop through each sensor and display results.
-    delay(50); // Wait 50ms between pings (about 20 pings/sec). 29ms should be the shortest delay between pings.
-    //back right left front
-    distances[i] = (sonar[i].ping_cm());
-    return distances[0];
-  }
+
+unsigned int read_distances(int i) {
+  unsigned int distance;
+  // Wait 50ms between pings (about 20 pings/sec). 29ms should be the shortest delay between pings.
+  //back right left front
+  distance = (sonar[i].ping_cm());
+  //delay(50);
+  return distance;
+  
   
 }
