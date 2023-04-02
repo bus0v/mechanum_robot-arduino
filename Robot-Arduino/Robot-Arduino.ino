@@ -14,6 +14,9 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/Temperature.h>
 #define IMU_ADDRESS 0x68
+#define IMU_PUBLISH_RATE 20
+#define US_PUBLISH_RATE 4
+#define COMMAND_RATE 20 //hz
 MPU6050 IMU;
 
 calData calib = { 0 };  //Calibration data
@@ -32,6 +35,7 @@ volatile float velocity[] = {0,0,0,0};
 volatile float distance[] = {0,0,0,0};
 volatile int posPrev[] = {0,0,0,0};
 long t0 = 0;
+unsigned long prev_cmd_rec_time = 0;
 float e0 = 0;
 float eInt = 0;
 float vFilt_float[4];
@@ -50,25 +54,35 @@ double v_rpm[] = {0,0,0,0};
 double pwr[] = {0,0,0,0};
 int dir;
 
-double kp = 5, ki = 5, kd = 0.1;
-//20 5 0.5
+double kp = 1, ki = 0, kd = 0;
+//5 5 0,1
 //can also do 5 1 0,5??
 //FR is weird
-PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],5,2.5,0.5,DIRECT),
-PID(&vFilt[1],&pwr[1],&targetpid[1],5,4,0.75,DIRECT),
-PID(&vFilt[2],&pwr[2],&targetpid[2],5,4,0.75,DIRECT),
-PID(&vFilt[3],&pwr[3],&targetpid[3],5,2.5,0.5,DIRECT)};
+PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
+PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
+PID(&vFilt[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
+PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
 
 //instantiate the node handle
 ros::NodeHandle nh;
 
-void messageCb(const std_msgs::Twist &speed_msg){
+void messageCb(const std_msgs::Float32MultiArray &speed_msg){
  noInterrupts();
  targetpid[0] = speed_msg.data[0];
  targetpid[1] = speed_msg.data[1];
  targetpid[2] = speed_msg.data[2];
  targetpid[3] = speed_msg.data[3];
  interrupts();
+ prev_cmd_rec_time = millis();
+ }
+
+ void pidCb(const std_msgs::Float32MultiArray &pid_msg){
+   kp = pid_msg.data[0];
+   ki = pid_msg.data[1];
+   kd = pid_msg.data[2];
+   for (int k = 0; k < 4; k++){
+     pids[k].SetTunings(kp,ki,kd);
+   }
  }
 
 //set message types
@@ -86,7 +100,7 @@ ros::Publisher pub_range_front("sonar_front", &sonar_dist);
 ros::Publisher pub_range_left("sonar_left", &sonar_dist);
 ros::Publisher pub_range_right("sonar_right", &sonar_dist);
 ros::Publisher pub_vel("v_filtered", &vel_trans);
-ros::Publisher imu_data("/imu_data", &imu_msg);
+ros::Publisher imu_data("/imu/data_raw", &imu_msg);
 ros::Publisher temp_data("/temp", &temp_msg);
 
 void setup(){
@@ -104,7 +118,7 @@ void setup(){
   nh.advertise(imu_data);
   nh.advertise(temp_data);
   nh.negotiateTopics();
-  
+
   //range stuff
   sonar_dist.radiation_type = sensor_msgs::Range::ULTRASOUND;
   sonar_dist.min_range = 0.02;
@@ -112,7 +126,7 @@ void setup(){
   char frame_id[] = "/ultrasound_ranger";
   sonar_dist.header.frame_id = frame_id;
   sonar_dist.field_of_view = 0.523599;
-  
+
   //imu calibration
   calib.accelBias[0] = -0.05;
   calib.accelBias[1] = -0.03;
@@ -126,6 +140,7 @@ void setup(){
   err = IMU.setAccelRange(2);
   char frame_imu[] = "/imu_frame";
   imu_msg.header.frame_id = frame_imu;
+
   for (int k = 0; k < 4; k++){
     pids[k].SetMode(AUTOMATIC);
     pids[k].SetOutputLimits(0,255);
@@ -143,78 +158,110 @@ void setup(){
 
 
 void loop(){
+  unsigned long prev_cmd_time = 0;
+  if (millis()-prev_cmd_time >= 1000 / COMMAND_RATE){
+    move();
+    prev_cmd_time = millis();
+  }
+  if (millis()-prev_cmd_rec_time >= 1000){
+    stop();
+  }
+
+  unsigned long prev_range_time = 0;
+  if (millis()-prev_range_time >= 1000 / US_PUBLISH_RATE){
+    publishUS();}
+
+  unsigned long prev_imu_time = 0;
+  if (millis()-prev_imu_time >= 1000 / IMU_PUBLISH_RATE){
+    publishIMU();
+    //add something here to check if it Initialized
+  }
+  //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
+  vel_trans.data = vFilt_float;
+  vel_trans.data_length = 4;
+
+  pub_ticks.publish(&wheel_ticks);
+  pub_vel.publish(&vel_trans);
+  nh.spinOnce();
+  //delay(3);
+}
+
+void move(){
   //read position
   int pos[4];
   noInterrupts();
   for(int k = 0; k < 4; k++){
      pos[k] = newPosition[k];}
-     
-  wheel_ticks.data = newPosition; 
+
+  wheel_ticks.data = newPosition;
   interrupts();
   wheel_ticks.data_length = 4;
   // time
   long t1 = micros();
   float deltaT = ((float) (t1-t0))/(1.0e6);
-  // inverse kinematics
- //python code fix this
-  transform = np.array([ (-1, 1, (d1+d2)),
-                            (1, 1, -(d1+d2)),
-                            (-1, 1, -(d1+d2)),
-                            (1, 1, (d1+d2)) ])
-
-
-    wheels = transform.dot(qvel)
 
   // loop through the motors
   for (int k = 0; k < 4; k++){
     //compute the speed
     velocity[k] = (pos[k]-posPrev[k])/deltaT;
     posPrev[k] = pos[k];
-    // compute distance in cm
-    distance[k] = pos[k]/330 * 25.1;
     t0 = t1;
 
     //get speed in cm/s
-    v_cm[k] = velocity[k]/330*25.1;
-
+    v_cm[k] = velocity[k]/330*0.251;
     v_rpm[k] = velocity[k]/330*60.0;
 
-    vFilt[k] = f.filterIn(v_rpm[k]);
+    vFilt[k] = v_rpm[k];
     vPrev[k] = vFilt[k];
-    
+
     //evaluate the control signal
     pids[k].SetControllerDirection(DIRECT);
     int dir = 1;
-    if(targetpid[k]<0){
+    if(targetpid[k] < 0){
       dir = -1;
       pids[k].SetControllerDirection(REVERSE);}
     pids[k].Compute();
 
     //loop through the motors
     setMotor(dir,pwr[k],k);
-    vFilt_float[k] = vFilt[k];
+    // convert double to float for transmission
+    vFilt_float[k] = v_cm[k];
   }
-  
-  //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
-  vel_trans.data = vFilt_float;
-  vel_trans.data_length = 4;
-  
+}
+
+void stop(){
+  for(int k = 0; k < 4; k++){
+    vFilt[k] = 0;
+  }
+}
+
+void publishUS(){
+  char frame_back[] = "/back_sonar";
+  sonar_dist.header.frame_id = frame_back;
   sonar_dist.range = read_distances(0)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_back.publish(&sonar_dist);
-  
+
+  char frame_right[] = "/right_sonar";
+  sonar_dist.header.frame_id = frame_right;
   sonar_dist.range = read_distances(1)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_right.publish(&sonar_dist);
-  
+
+  char frame_left[] = "/left_sonar";
+  sonar_dist.header.frame_id = frame_left;
   sonar_dist.range = read_distances(2)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_left.publish(&sonar_dist);
-  
+
+  char frame_front[] = "/front_sonar";
+  sonar_dist.header.frame_id = frame_front;
   sonar_dist.range = read_distances(3)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_front.publish(&sonar_dist);
+}
 
+void publishIMU(){
   //get data from IMU
   IMU.update();
   IMU.getAccel(&accelData);
@@ -232,11 +279,6 @@ void loop(){
   imu_data.publish(&imu_msg);
   temp_msg.header.stamp = nh.now();
   temp_data.publish(&temp_msg);
-  pub_ticks.publish(&wheel_ticks);
-  pub_vel.publish(&vel_trans);
-  nh.spinOnce();
-  
-  delay(3); 
 }
 
 template <int j>
@@ -247,7 +289,7 @@ void readEncoder(){
       newPosition[j] = encoderMin;
     }
     else{
-     newPosition[j]++; 
+     newPosition[j]++;
     }
   }
   else{
