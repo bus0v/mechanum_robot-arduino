@@ -49,19 +49,19 @@ Filter f(cutoff_freq, sampling_time, order);
 
 double vFilt[] = {0,0,0,0};
 double vPrev[] = {0,0,0,0};
-double v_cm[] = {0,0,0,0};
+double v_m[] = {0,0,0,0};
 double v_rpm[] = {0,0,0,0};
 double pwr[] = {0,0,0,0};
 int dir;
 
-double kp = 1, ki = 0, kd = 0;
+double kp = 200.0, ki = 0.0, kd = 0.0;
 //5 5 0,1
 //can also do 5 1 0,5??
 //FR is weird
-PID pids[4]= {PID(&vFilt[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
-PID(&vFilt[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
-PID(&vFilt[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
-PID(&vFilt[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
+PID pids[4]= {PID(&v_m[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
+PID(&v_m[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
+PID(&v_m[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
+PID(&v_m[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
 
 //instantiate the node handle
 ros::NodeHandle nh;
@@ -83,6 +83,12 @@ void messageCb(const std_msgs::Float32MultiArray &speed_msg){
    for (int k = 0; k < 4; k++){
      pids[k].SetTunings(kp,ki,kd);
    }
+   //char kp_buffer[50];
+   //dtostrf(kp,5,1,kp_buffer);
+   //sprintf(buffer,"Set constants to: %s",kp_buffer);
+   nh.loginfo("Set constants");
+   //nh.loginfo(kp_buffer);
+
  }
 
 //set message types
@@ -94,6 +100,7 @@ sensor_msgs::Temperature temp_msg;
 
 //initialize subscribers and publishers
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
+ros::Subscriber<std_msgs::Float32MultiArray> pid_sub("pid_constants", &pidCb);
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
 ros::Publisher pub_range_back("sonar_back", &sonar_dist);
 ros::Publisher pub_range_front("sonar_front", &sonar_dist);
@@ -109,6 +116,7 @@ void setup(){
   nh.initNode();
   while(!nh.connected()) {nh.spinOnce();}
   nh.subscribe(sub);
+  nh.subscribe(pid_sub);
   nh.advertise(pub_ticks);
   nh.advertise(pub_vel);
   nh.advertise(pub_range_back);
@@ -123,8 +131,6 @@ void setup(){
   sonar_dist.radiation_type = sensor_msgs::Range::ULTRASOUND;
   sonar_dist.min_range = 0.02;
   sonar_dist.max_range = 4.0;
-  char frame_id[] = "/ultrasound_ranger";
-  sonar_dist.header.frame_id = frame_id;
   sonar_dist.field_of_view = 0.523599;
 
   //imu calibration
@@ -147,14 +153,12 @@ void setup(){
     pids[k].SetSampleTime(10);
     pinMode(encA[k], INPUT);
     pinMode(encB[k], INPUT);
-    //kp kd ki pwr
-
-    //2.5 0.8 0.5 works with 5% accuracy for distance
     set_vel(0);}
     attachInterrupt(digitalPinToInterrupt(encA[0]),readEncoder<0>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[1]),readEncoder<1>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
-    attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);}
+    attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
+    nh.loginfo("Setup complete");}
 
 
 void loop(){
@@ -164,6 +168,7 @@ void loop(){
     prev_cmd_time = millis();
   }
   if (millis()-prev_cmd_rec_time >= 1000){
+    nh.logwarn("No command recieved, Stopping motors!");
     stop();
   }
 
@@ -208,7 +213,7 @@ void move(){
     t0 = t1;
 
     //get speed in cm/s
-    v_cm[k] = velocity[k]/330*0.251;
+    v_m[k] = velocity[k]/330*0.251;
     v_rpm[k] = velocity[k]/330*60.0;
 
     vFilt[k] = v_rpm[k];
@@ -225,13 +230,13 @@ void move(){
     //loop through the motors
     setMotor(dir,pwr[k],k);
     // convert double to float for transmission
-    vFilt_float[k] = v_cm[k];
+    vFilt_float[k] = v_m[k];
   }
 }
 
 void stop(){
   for(int k = 0; k < 4; k++){
-    vFilt[k] = 0;
+    vFilt[k] = 0.0;
   }
 }
 
