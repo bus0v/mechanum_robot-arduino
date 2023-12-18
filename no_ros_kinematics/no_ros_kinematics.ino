@@ -14,14 +14,19 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/Temperature.h>
 #define IMU_ADDRESS 0x68
-#define IMU_PUBLISH_RATE 20
-#define US_PUBLISH_RATE 4
-#define COMMAND_RATE 20 //hz
 MPU6050 IMU;
 
 calData calib = { 0 };  //Calibration data
 AccelData accelData;    //Sensor data
 GyroData gyroData;
+
+//half width in cm
+float d1 = 0.1070;
+// half length in cm
+float d2 = 0.0830;
+// wheel radius in cm
+float R = 0.0400;
+float sum_d = d1+d2;
 
 //FR,FL,BL,BR
 // define pin lists
@@ -35,7 +40,6 @@ volatile float velocity[] = {0,0,0,0};
 volatile float distance[] = {0,0,0,0};
 volatile int posPrev[] = {0,0,0,0};
 long t0 = 0;
-unsigned long prev_cmd_rec_time = 0;
 float e0 = 0;
 float eInt = 0;
 float vFilt_float[4];
@@ -46,49 +50,36 @@ IIR::ORDER  order  = IIR::ORDER::OD1; // Order (OD1 to OD4)
 
 // Low-pass filter
 Filter f(cutoff_freq, sampling_time, order);
-
+double vx,vy,wz;
+double v_backx, v_backy, wz_rad;
+double v_plan_x, v_plan_y, w_plan;
 double vFilt[] = {0,0,0,0};
 double vPrev[] = {0,0,0,0};
-double v_m[] = {0,0,0,0};
+double v_cm[] = {0,0,0,0};
 double v_rpm[] = {0,0,0,0};
 double pwr[] = {0,0,0,0};
 int dir;
 
-double kp = 200.0, ki = 0.0, kd = 0.0;
-//5 5 0,1
+double kp = 5, ki = 5, kd = 0.1;
+//20 5 0.5
 //can also do 5 1 0,5??
 //FR is weird
-PID pids[4]= {PID(&v_m[0],&pwr[0],&targetpid[0],kp,ki,kd,DIRECT),
-PID(&v_m[1],&pwr[1],&targetpid[1],kp,ki,kd,DIRECT),
-PID(&v_m[2],&pwr[2],&targetpid[2],kp,ki,kd,DIRECT),
-PID(&v_m[3],&pwr[3],&targetpid[3],kp,ki,kd,DIRECT)};
+//pid on v_x
+PID pid_vx = PID(&v_backx, &vx, &v_plan_x,5,2.5,0.5,DIRECT);
+//pid on v y
+PID pid_vy = PID(&v_backy, &vy, &v_plan_y,5,2.5,0.5,DIRECT);
+//pid on w
+PID pid_wz = PID(&wz_rad, &wz, &w_plan,5,2.5,0.5,DIRECT);
 
 //instantiate the node handle
-ros::NodeHandle nh;
+// ros::NodeHandle nh;
 
-void messageCb(const std_msgs::Float32MultiArray &speed_msg){
+void messageCb(const geometry_msgs::Twist &twist_msg){
  noInterrupts();
- targetpid[0] = speed_msg.data[0];
- targetpid[1] = speed_msg.data[1];
- targetpid[2] = speed_msg.data[2];
- targetpid[3] = speed_msg.data[3];
+ v_plan_x = twist_msg.linear.x;
+ v_plan_y = twist_msg.linear.y;
+ w_plan = twist_msg.angular.z;
  interrupts();
- prev_cmd_rec_time = millis();
- }
-
- void pidCb(const std_msgs::Float32MultiArray &pid_msg){
-   kp = pid_msg.data[0];
-   ki = pid_msg.data[1];
-   kd = pid_msg.data[2];
-   for (int k = 0; k < 4; k++){
-     pids[k].SetTunings(kp,ki,kd);
-   }
-   //char kp_buffer[50];
-   //dtostrf(kp,5,1,kp_buffer);
-   //sprintf(buffer,"Set constants to: %s",kp_buffer);
-   nh.loginfo("Set constants");
-   //nh.loginfo(kp_buffer);
-
  }
 
 //set message types
@@ -99,15 +90,15 @@ sensor_msgs::Imu imu_msg;
 sensor_msgs::Temperature temp_msg;
 
 //initialize subscribers and publishers
-ros::Subscriber<std_msgs::Float32MultiArray> sub("motor", &messageCb);
-ros::Subscriber<std_msgs::Float32MultiArray> pid_sub("pid_constants", &pidCb);
+ros::Subscriber<geometry_msgs::Twist> sub("twist", &messageCb);
+
 ros::Publisher pub_ticks("ticks", &wheel_ticks);
 ros::Publisher pub_range_back("sonar_back", &sonar_dist);
 ros::Publisher pub_range_front("sonar_front", &sonar_dist);
 ros::Publisher pub_range_left("sonar_left", &sonar_dist);
 ros::Publisher pub_range_right("sonar_right", &sonar_dist);
 ros::Publisher pub_vel("v_filtered", &vel_trans);
-ros::Publisher imu_data("/imu/data_raw", &imu_msg);
+ros::Publisher imu_data("/imu_data", &imu_msg);
 ros::Publisher temp_data("/temp", &temp_msg);
 
 void setup(){
@@ -116,7 +107,6 @@ void setup(){
   nh.initNode();
   while(!nh.connected()) {nh.spinOnce();}
   nh.subscribe(sub);
-  nh.subscribe(pid_sub);
   nh.advertise(pub_ticks);
   nh.advertise(pub_vel);
   nh.advertise(pub_range_back);
@@ -131,6 +121,8 @@ void setup(){
   sonar_dist.radiation_type = sensor_msgs::Range::ULTRASOUND;
   sonar_dist.min_range = 0.02;
   sonar_dist.max_range = 4.0;
+  char frame_id[] = "/ultrasound_ranger";
+  sonar_dist.header.frame_id = frame_id;
   sonar_dist.field_of_view = 0.523599;
 
   //imu calibration
@@ -146,52 +138,32 @@ void setup(){
   err = IMU.setAccelRange(2);
   char frame_imu[] = "/imu_frame";
   imu_msg.header.frame_id = frame_imu;
+  //change these to the pid for vx vy wz
+  pid_vx.SetMode(AUTOMATIC);
+  pid_vx.SetOutputLimits(0,255);
+  pid_vx.SetSampleTime(10);
+  pid_vy.SetMode(AUTOMATIC);
+  pid_vy.SetOutputLimits(0,255);
+  pid_vy.SetSampleTime(10);
+  pid_wz.SetMode(AUTOMATIC);
+  pid_wz.SetOutputLimits(0,255);
+  pid_wz.SetSampleTime(10);
 
   for (int k = 0; k < 4; k++){
-    pids[k].SetMode(AUTOMATIC);
-    pids[k].SetOutputLimits(0,255);
-    pids[k].SetSampleTime(10);
+    //set all motors to 0
+    set_vel(0);
     pinMode(encA[k], INPUT);
-    pinMode(encB[k], INPUT);
-    set_vel(0);}
+    pinMode(encB[k], INPUT);}
+
     attachInterrupt(digitalPinToInterrupt(encA[0]),readEncoder<0>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[1]),readEncoder<1>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[2]),readEncoder<2>,RISING);
     attachInterrupt(digitalPinToInterrupt(encA[3]),readEncoder<3>,RISING);
-    nh.loginfo("Setup complete");}
+  }
 
 
 void loop(){
-  unsigned long prev_cmd_time = 0;
-  if (millis()-prev_cmd_time >= 1000 / COMMAND_RATE){
-    move();
-    prev_cmd_time = millis();
-  }
-  if (millis()-prev_cmd_rec_time >= 1000){
-    nh.logwarn("No command recieved, Stopping motors!");
-    stop();
-  }
 
-  unsigned long prev_range_time = 0;
-  if (millis()-prev_range_time >= 1000 / US_PUBLISH_RATE){
-    publishUS();}
-
-  unsigned long prev_imu_time = 0;
-  if (millis()-prev_imu_time >= 1000 / IMU_PUBLISH_RATE){
-    publishIMU();
-    //add something here to check if it Initialized
-  }
-  //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
-  vel_trans.data = vFilt_float;
-  vel_trans.data_length = 4;
-
-  pub_ticks.publish(&wheel_ticks);
-  pub_vel.publish(&vel_trans);
-  nh.spinOnce();
-  //delay(3);
-}
-
-void move(){
   //read position
   int pos[4];
   noInterrupts();
@@ -203,70 +175,87 @@ void move(){
   wheel_ticks.data_length = 4;
   // time
   long t1 = micros();
+  v_plan_x = 100* math.sin(t1);
+  v_plan_y = 0.0;
+  w_plan = 0.0;
   float deltaT = ((float) (t1-t0))/(1.0e6);
+  //evaluate pids
+  pid_vx.SetControllerDirection(DIRECT);
+  if(v_plan_x - v_backx < 0){
+    pid_vx.SetControllerDirection(REVERSE);}
+  pid_vx.Compute();
+
+  pid_vy.SetControllerDirection(DIRECT);
+  if(v_plan_y -v_backy < 0){
+    pid_vy.SetControllerDirection(REVERSE);}
+  pid_vy.Compute();
+
+  pid_wz.SetControllerDirection(DIRECT);
+  if(w_plan - wz_rad < 0){
+    pid_wz.SetControllerDirection(REVERSE);}
+  pid_wz.Compute();
+
+  // inverse kinematics
+   pwr[1] = (1/R) * (vx -vy -(sum_d *wz));
+   pwr[0] = (1/R) * (vx +vy +(sum_d *wz));
+   pwr[2] = (1/R) * (vx +vy -(sum_d *wz));
+   pwr[3] = (1/R) * (vx -vy +(sum_d *wz));
+   // set pids
 
   // loop through the motors
   for (int k = 0; k < 4; k++){
     //compute the speed
     velocity[k] = (pos[k]-posPrev[k])/deltaT;
     posPrev[k] = pos[k];
+    // compute distance in m
+    distance[k] = pos[k]/330 * 0.251;
     t0 = t1;
 
-    //get speed in cm/s
-    v_m[k] = velocity[k]/330*0.251;
-    v_rpm[k] = velocity[k]/330*60.0;
+    //get speed in m/s
+    v_cm[k] = velocity[k]/330 * 0.251;
 
-    vFilt[k] = v_rpm[k];
+    v_rpm[k] = velocity[k]/330 * 60.0;
+
+    vFilt[k] = f.filterIn(v_rpm[k]);
     vPrev[k] = vFilt[k];
-
-    //evaluate the control signal
-    pids[k].SetControllerDirection(DIRECT);
-    int dir = 1;
-    if(targetpid[k] < 0){
-      dir = -1;
-      pids[k].SetControllerDirection(REVERSE);}
-    pids[k].Compute();
-
     //loop through the motors
-    setMotor(dir,pwr[k],k);
-    // convert double to float for transmission
-    vFilt_float[k] = v_m[k];
+    double pwm = 0;
+    if (pwr[k] < 0){
+      dir = -1;
+      pwm = abs(pwr[k]);
+    }
+    else{
+      dir = 1;
+      pwm = pwr[k];
+    }
+    setMotor(dir,pwm,k);
+    vFilt_float[k] = vFilt[k];
   }
-}
 
-void stop(){
-  for(int k = 0; k < 4; k++){
-    vFilt[k] = 0.0;
-  }
-}
+  // forard Kinematics
+  v_backx = (R/4)*(vFilt[0] + vFilt[1] + vFilt[2] + vFilt[3]);
+  v_backy = (R/4)*(vFilt[0] - vFilt[1] + vFilt[2] - vFilt[3]);
 
-void publishUS(){
-  char frame_back[] = "/back_sonar";
-  sonar_dist.header.frame_id = frame_back;
+  //this is here because float32 multi array doesn't like doubles, but double is required for the PID function
+  vel_trans.data = vFilt_float;
+  vel_trans.data_length = 4;
+
   sonar_dist.range = read_distances(0)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_back.publish(&sonar_dist);
 
-  char frame_right[] = "/right_sonar";
-  sonar_dist.header.frame_id = frame_right;
   sonar_dist.range = read_distances(1)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_right.publish(&sonar_dist);
 
-  char frame_left[] = "/left_sonar";
-  sonar_dist.header.frame_id = frame_left;
   sonar_dist.range = read_distances(2)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_left.publish(&sonar_dist);
 
-  char frame_front[] = "/front_sonar";
-  sonar_dist.header.frame_id = frame_front;
   sonar_dist.range = read_distances(3)/ 100.0;
   sonar_dist.header.stamp = nh.now();
   pub_range_front.publish(&sonar_dist);
-}
 
-void publishIMU(){
   //get data from IMU
   IMU.update();
   IMU.getAccel(&accelData);
@@ -277,6 +266,7 @@ void publishIMU(){
   imu_msg.linear_acceleration.z = accelData.accelZ * 9.81;
   IMU.getGyro(&gyroData);
   //convert to rad/s from degrees
+  wz_rad = gyroData.gyroZ * 0.0174533;
   imu_msg.angular_velocity.x = gyroData.gyroY * 0.0174533;
   imu_msg.angular_velocity.y = gyroData.gyroX * 0.0174533;
   imu_msg.angular_velocity.z = gyroData.gyroZ * 0.0174533;
@@ -284,6 +274,11 @@ void publishIMU(){
   imu_data.publish(&imu_msg);
   temp_msg.header.stamp = nh.now();
   temp_data.publish(&temp_msg);
+  pub_ticks.publish(&wheel_ticks);
+  pub_vel.publish(&vel_trans);
+  nh.spinOnce();
+
+  delay(3);
 }
 
 template <int j>
