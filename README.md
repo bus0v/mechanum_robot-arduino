@@ -12,7 +12,7 @@ The arduino recieves an array of 4 floats from the rasberry pi on the **/motor**
 Using a specified command rate the speed is published to the motors and then controlled through PID using the encoder feedback. 
 Then the robot, publishes the recorded amount of encoder ticks to the Raspberry Pi to the **/ticks** topic, so they can be processed by the odometry node. 
 
-The Arduino also collects IMU information and publishes it on the **/imu_data** topic. 
+The Arduino also collects IMU information and publishes it on the **/imu/data_raw** topic. 
 
 It also has 4 ultra sound sensors that I added for redundance that publish to their own topics, but they are pretty unreliable.
 
