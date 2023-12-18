@@ -8,9 +8,9 @@ In terms of communication the Arduino acts as a single ROS node, with multiple p
 It controls the motors through the use of the Adafruit v2 motor shield and a PID controller. 
 PID control is possible due to the quadrature encoders on the wheels. Each wheel is controlled separately.
 
-The arduino recieves an array of 4 floats from the rasberry pi on the **/motors** topic, which are the desired motor speed. 
+The arduino recieves an array of 4 floats from the rasberry pi on the **/motor** topic, which are the desired motor speed. 
 Using a specified command rate the speed is published to the motors and then controlled through PID using the encoder feedback. 
-Then the robot, publishes the recorded amount of encoder ticks to the Raspberry Pi, so they can be processed by the odometry node. 
+Then the robot, publishes the recorded amount of encoder ticks to the Raspberry Pi to the **/ticks** topic, so they can be processed by the odometry node. 
 
 The Arduino also collects IMU information and publishes it on the **/imu_data** topic. 
 
